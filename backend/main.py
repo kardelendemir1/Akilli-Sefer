@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from datetime import datetime
 
@@ -6,6 +6,8 @@ import models
 import schemas
 from database import engine, get_db
 import ai_service
+from websocket_manager import manager
+
 
 # Uygulama başlarken veritabanı tablolarını yoksa oluşturur
 models.Base.metadata.create_all(bind=engine)
@@ -40,9 +42,10 @@ def setup_test_data(db: Session = Depends(get_db)):
     return {"message": "Test verileri (Hat ve Durak) başarıyla eklendi.", "route_id": route.id, "stop_id": stop.id}
 
 @app.post("/api/tap-card", response_model=schemas.PassengerDemandResponse)
-def tap_card(demand: schemas.PassengerDemandCreate, db: Session = Depends(get_db)):
+def tap_card(demand: schemas.PassengerDemandCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """
     Yolcunun otobüs kartını okutarak sisteme kayıt olduğu uç nokta.
+    Canlı WebSocket yayını burada tetiklenir.
     """
     # 1. Durağın veritabanında var olup olmadığını kontrol et
     stop = db.query(models.Stop).filter(models.Stop.id == demand.stop_id).first()
@@ -60,7 +63,25 @@ def tap_card(demand: schemas.PassengerDemandCreate, db: Session = Depends(get_db
     db.commit()
     db.refresh(new_demand)
 
-    # İlerleyecek aşamalarda eşik(threshold) kontrolü algoritması buraya eklenecektir.
+    # 3. İlerleyecek aşamalarda eşik(threshold) kontrolü algoritması buraya eklenecektir.
+
+    # 4. YENİ EKLENEN WEBSOCKET CANLI YAYINI:
+    # O durağa özel anlık bekleyen yolcu sayısını bul (Dashboard için)
+    waiting_count = db.query(models.PassengerDemand).filter(
+        models.PassengerDemand.stop_id == demand.stop_id,
+        models.PassengerDemand.status == "waiting"
+    ).count()
+
+    ws_message = {
+        "event": "new_tap",
+        "stop_id": demand.stop_id,
+        "waiting_count": waiting_count,
+        "timestamp": str(new_demand.timestamp),
+        "message": f"Durak ID {demand.stop_id}'de yeni hareket, bekleyen sayısı: {waiting_count}"
+    }
+    
+    # Asenkron websocket yayın işlemini Background (Arka Plan) tetikleyiciye devret
+    background_tasks.add_task(manager.broadcast_demand_update, ws_message)
 
     return new_demand
 
@@ -94,3 +115,20 @@ def admin_chat(request: schemas.AdminChatRequest, db: Session = Depends(get_db))
     reply_text = ai_service.get_admin_assistant_reply(request.message, stats)
     
     return schemas.AdminChatResponse(reply=reply_text)
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """
+    Vite/React gibi modern frontend yapılarının (Örn Yönetici Paneli) 
+    anlık veri akışına canlı abone olacağı yer.
+    """
+    await manager.connect(websocket)
+    try:
+        while True:
+            # Client'tan bir sinyal bekle
+            data = await websocket.receive_text()
+            # Şu anki iskelet mimarisinde sadece bağlantıyı açık tutmaya fayda sağlıyor
+            # İleride yönetim panelinden admin "ek sefer onayı" yollarsa bu data ile işlenebilir.
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
