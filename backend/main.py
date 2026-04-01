@@ -5,6 +5,7 @@ from datetime import datetime
 import models
 import schemas
 from database import engine, get_db
+import ai_service
 
 # Uygulama başlarken veritabanı tablolarını yoksa oluşturur
 models.Base.metadata.create_all(bind=engine)
@@ -70,3 +71,26 @@ def get_demands(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     """
     demands = db.query(models.PassengerDemand).offset(skip).limit(limit).all()
     return demands
+
+@app.post("/api/admin/chat", response_model=schemas.AdminChatResponse)
+def admin_chat(request: schemas.AdminChatRequest, db: Session = Depends(get_db)):
+    """
+    Yönetici paneli için Gemini altyapılı asistan uç noktası.
+    """
+    # 1. Sistemin mevcut istatistiklerini hesapla
+    total_routes = db.query(models.Route).count()
+    total_stops = db.query(models.Stop).count()
+    total_waiting = db.query(models.PassengerDemand).filter(models.PassengerDemand.status == "waiting").count()
+    
+    # İleride dispatch tablosuna bağladığımızda ekstra sefer sayısını da ölçeceğiz
+    stats = {
+        "total_routes": total_routes,
+        "total_stops": total_stops,
+        "total_waiting": total_waiting,
+        "extra_dispatch_count": 0 
+    }
+    
+    # 2. Gemini modeline sor ve yanıtı al
+    reply_text = ai_service.get_admin_assistant_reply(request.message, stats)
+    
+    return schemas.AdminChatResponse(reply=reply_text)

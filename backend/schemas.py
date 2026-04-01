@@ -25,3 +25,9 @@ class RouteBase(BaseModel):
 class StopBase(BaseModel):
     route_id: int
     name: str
+
+class AdminChatRequest(BaseModel):
+    message: str
+
+class AdminChatResponse(BaseModel):
+    reply: str
