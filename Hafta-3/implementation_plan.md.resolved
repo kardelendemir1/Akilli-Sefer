@@ -1,0 +1,68 @@
+# Anlık Sefer Optimizasyonu Karar Destek Sistemi
+
+## Proje Amacı ve Kapsamı
+Bu proje, yolcuların duraklardaki kart okutma (doğrulama) verilerini kullanarak toplu taşıma için gerçek zamanlı talep temelli sefer optimizasyonu sağlar. Sabit sefer saatlerine ek olarak, bekleyen yolcu sayısı önceden belirlenen eşik değerini aştığında sisteme otomatik olarak "ek sefer" tanımlanır.
+
+## Kullanılacak Teknolojiler
+- **Backend:** Python (FastAPI framework'ü kullanılacak. Asenkron, hızlı ve REST API'ler için idealdir).
+- **Veritabanı:** PostgreSQL + SQLAlchemy ORM (Tabloları ve ilişkilerini yönetmek için).
+- **Frontend:** HTML5, CSS3 (Vanilla), JavaScript (Vanilla) - REST API ile haberleşen modern, dinamik ve görsel açıdan zengin bir arayüz tasarlanacak. Arayüzde *glassmorphism* (yarı saydam) gibi modern UI konseptleri, etkileyici animasyonlar ve göze hoş gelen renkler kullanılacaktır.
+
+## Veritabanı Şeması (Database Schema)
+
+Aşağıdaki veritabanı tabloları planlanmıştır:
+
+1. **`route` (Hatlar):**
+   - `id`: Benzersiz değer
+   - `name`: Hat adı (Örn: 500T Tuzla-Şifa)
+   - `threshold`: Ek sefer tetikleme eşik değeri (Örn: 20 yolcu)
+
+2. **`stop` (Duraklar):**
+   - `id`: Benzersiz değer
+   - `route_id`: Bağlı olduğu hat (Foreign Key)
+   - `name`: Durak adı
+
+3. **`passenger_demand` (Yolcu Talepleri):**
+   - `id`: Benzersiz değer
+   - `stop_id`: Beklenen durak (Foreign Key)
+   - `timestamp`: Kart okutma zamanı
+   - `status`: 'waiting' (bekliyor) veya 'boarded' (otobüse bindi)
+
+4. **`dispatch` (Seferler):**
+   - `id`: Benzersiz değer
+   - `route_id`: Hangi hatta sefer düzenlendiği
+   - `scheduled_time`: Planlanan hareket saati
+   - `is_extra`: Mevcut sefer mi, yoksa algoritmayla oluşturulan "ek" sefer mi? (Boolean)
+
+## Karar Destek Sistemi ve Algoritma Akışı
+Sistem `POST /api/tap-card` uç noktasına (endpoint) bir kart okutma isteği aldığında:
+1. `passenger_demand` tablosuna 'waiting' statüsünde yeni bir kayıt atılır.
+2. Bu durağın bağlı olduğu hattaki (`route`) toplam 'waiting' yolcu sayısı hesaplanır.
+3. Eğer bekleyen yolcu sayısı, o hattın `threshold` değerine ulaşır veya aşarsa algoritma devreye girer:
+   - Sisteme hemen yeni bir "Ek Sefer" (`is_extra=True`) eklenir.
+   - Bu hattaki mevcut bekleyen yolcuların statüsü eşzamanlı sıfırlanır / 'boarded' yapılır (otobüs hareket edene kadar verilerin işlendiği simüle edilir).
+   - Tüm bunlar gerçek zamanlı olarak (Javascript Fetch ile) Admin Dashboard arayüzüne yansıtılır.
+
+## Proje Dizin Yapısı
+Proje, `c:/Users/asus/OneDrive/Desktop/ANLIK SEFER` dizini içerisine inşa edilecektir.
+
+### [Kurulacak Dosyalar]
+#### [NEW] [main.py](file:///c:/Users/asus/OneDrive/Desktop/ANLIK%20SEFER/backend/main.py)
+#### [NEW] [database.py](file:///c:/Users/asus/OneDrive/Desktop/ANLIK%20SEFER/backend/database.py)
+#### [NEW] [models.py](file:///c:/Users/asus/OneDrive/Desktop/ANLIK%20SEFER/backend/models.py)
+#### [NEW] [index.html](file:///c:/Users/asus/OneDrive/Desktop/ANLIK%20SEFER/frontend/index.html)
+#### [NEW] [station.html](file:///c:/Users/asus/OneDrive/Desktop/ANLIK%20SEFER/frontend/station.html)
+#### [NEW] [styles.css](file:///c:/Users/asus/OneDrive/Desktop/ANLIK%20SEFER/frontend/css/styles.css)
+#### [NEW] [app.js](file:///c:/Users/asus/OneDrive/Desktop/ANLIK%20SEFER/frontend/js/app.js)
+
+## User Review Required
+> [!IMPORTANT]
+> 1. Veritabanı seçimi PostgreSQL olarak belirlenmiştir. Kendi bilgisayarınızda bir PostgreSQL sunucusu mevcut mu (bağlantı dizesi verecek misiniz)? Yoksa geliştirme sürecini kolaylaştırmak adına şimdilik **SQLite** ile başlayıp (Python içinde gömülüdür, hiç kurulum gerektirmez), ileride kolayca PostgreSQL'e geçirmemi ister misiniz?
+> 2. Hazırladığım mimari ve Backend (FastAPI, Python) & Frontend (HTML/JS) yaklaşımını onaylıyor musunuz? Onaylarsanız projeyi ve dosyaları oluşturmaya başlayacağım.
+
+## Verification Plan
+1. **Veritabanı Testi:** Uygulama başlatıldığında tabloların (`route`, `stop`, `passenger_demand`, `dispatch`) doğru bir şekilde otomatik olarak oluşturulduğu konsol üzerinden doğrulanacak.
+2. **API ve Algoritma Testi:** Simüle edilmiş `curl` (veya test scripti) istekleriyle duraktan art arda (örneğin 20 defa) kart okutulup, eşik değere (threshold) ulaşıldığında veritabanında otomatik olarak yeni bir sefer (`is_extra=True`) tanımlandığı gözlemlenecek.
+3. **Manuel Arayüz Testi:**
+   - Frontend `station.html` üzerinden durak terminal ekranı açılarak "Kart Okut" simülasyonu yapılacak.
+   - Frontend `index.html` üzerinden (Yönetici Paneli) durak yoğunluk grafiğinin anlık arttığı ve eşik geçildiğinde ek sefer alarmının/bildiriminin düştüğü gözlemlenecek.
